@@ -71,8 +71,9 @@
             cursor: pointer;
             user-select: none;
             border: 1px solid var(--cell-border);
-            background: #fff;
+            background: #1e222a;
             color: #000;
+            overflow: hidden;
             transition: transform 0.05s;
         }
 
@@ -134,7 +135,7 @@
 </head>
 
 <body>
-<h1 class="mb-4">Iron Giants Mission Creation Tool v0.0.9</h1>
+<h1 class="mb-4">Iron Giants Mission Creation Tool v0.1.0</h1>
 <div class="row g-3">
     <div class="col-md-5">
         <div class="panel">
@@ -173,6 +174,14 @@
                         <option value="Swamp">Swamp</option>
                     </select>
                 </div>
+                <div class="col-6">
+                    <label class="form-label">Mission Type</label>
+                    <select id="missionType" class="form-select form-select-sm">
+                        <option value="normal">normal</option>
+                        <option value="boss">boss</option>
+                        <option value="side">side</option>
+                    </select>
+                </div>
             </div>
 
             <label class="form-label">Rewards</label>
@@ -181,7 +190,7 @@
                 <div class="row g-2 mb-2">
                     <div class="col">
                         <label class="form-label">Crate ID</label>
-                        <input type="number" id="ftcCrateId" class="form-control form-control-sm" value="2"
+                        <input type="number" id="ftcCrateId" class="form-control form-control-sm" value="2"\f
                                placeholder="Crate ID"/>
                     </div>
                     <div class="col">
@@ -273,11 +282,11 @@
                 <div class="row g-2 mb-2">
                     <div class="col">
                         <label class="form-label">X</label>
-                        <input type="number" id="locX" class="form-control form-control-sm" value="0" />
+                        <input type="number" id="locX" class="form-control form-control-sm" value="0"/>
                     </div>
                     <div class="col">
                         <label class="form-label">Y</label>
-                        <input type="number" id="locY" class="form-control form-control-sm" value="0" />
+                        <input type="number" id="locY" class="form-control form-control-sm" value="0"/>
                     </div>
                 </div>
             </div>
@@ -376,7 +385,17 @@
             TILE_IDS.forEach(id => {
                 const b = document.createElement("button");
                 b.className = "tile-btn btn btn-sm";
-                b.textContent = TILE_LABELS[id];
+                b.dataset.tileId = id;
+
+                const spriteName = getTileSpriteName(id);
+                if (spriteName) {
+                    const img = document.createElement("img");
+                    img.src = `tiles/${spriteName}.png`;
+                    img.style.cssText = "width:20px;height:20px;object-fit:contain;vertical-align:middle;margin-right:4px;";
+                    img.onerror = () => img.style.display = "none";
+                    b.appendChild(img);
+                }
+                b.append(id);
 
                 b.addEventListener("click", () => {
                     selectedTile = id;
@@ -440,19 +459,104 @@
                 }
             }
             gridContainer.appendChild(g);
+            autoRotateWalls();
+        }
+
+        function getTileSpriteName(v) {
+            if (!v || v === "empty") return null;
+            if (v.startsWith("enemy")) return "enemy";
+            if (v.startsWith("repairStation")) return "repairStation";
+            if (v.startsWith("upgradeStation")) return "upgradeStation";
+            return v;
         }
 
         function updateCell(c, v) {
-            c.textContent = "";
+            c.innerHTML = "";
             c.title = v;
-            if (v === "empty") {
-                c.textContent = "";
-            } else if (v.startsWith("enemy")) {
-                c.textContent = v;
-                c.style.color = "#c33";
-            } else {
-                c.textContent = v;
-                c.style.color = "#000";
+            const sprite = getTileSpriteName(v);
+            if (sprite) {
+                const img = document.createElement("img");
+                img.src = `tiles/${sprite}.png`;
+                img.style.cssText = "width:100%;height:100%;object-fit:contain;display:block;pointer-events:none;";
+                c.appendChild(img);
+            }
+        }
+
+        function isWall(x, y) {
+            if (x < 0 || y < 0 || x >= gridW || y >= gridH) return false;
+            return grid[y] && grid[y][x] === "wall";
+        }
+
+        function getWallVisual(x, y) {
+            const up = isWall(x, y - 1);
+            const down = isWall(x, y + 1);
+            const left = isWall(x - 1, y);
+            const right = isWall(x + 1, y);
+
+            let texture = "wall";
+            let rotation = 0;
+
+            if (up && down && left && right) {
+                texture = "wallCross";
+            } else if (!up && down && left && right) {
+                texture = "wallT";
+                rotation = 180;
+            } else if (up && !right && down && left) {
+                texture = "wallT";
+                rotation = 270;
+            } else if (up && !down && left && right) {
+                texture = "wallT";
+                rotation = 0
+            } else if (up && down && !left && right) {
+                texture = "wallT";
+                rotation = 90;
+            } else if (left && right) {
+                texture = "wall";
+                rotation = 0;
+            } else if (up && down) {
+                texture = "wall";
+                rotation = 90;
+            } else if (right && down) {
+                texture = "wallCorner";
+                rotation = 0;
+            } else if (down && left) {
+                texture = "wallCorner";
+                rotation = 90;
+            } else if (left && up) {
+                texture = "wallCorner";
+                rotation = 180;
+            } else if (up && right) {
+                texture = "wallCorner";
+                rotation = 270;
+            } else if (right || left) {
+                texture = "wall";
+                rotation = 0;
+            } else if (up || down) {
+                texture = "wall";
+                rotation = 90;
+            }
+
+            return {texture, rotation};
+        }
+
+        function autoRotateWalls() {
+            for (let y = 0; y < gridH; y++) {
+                for (let x = 0; x < gridW; x++) {
+                    if (grid[y] && grid[y][x] === "wall") {
+                        const c = gridContainer.querySelector(`.cell[data-x="${x}"][data-y="${y}"]`);
+                        if (!c) continue;
+                        const {texture, rotation} = getWallVisual(x, y);
+                        let img = c.querySelector("img");
+                        if (!img) {
+                            img = document.createElement("img");
+                            img.style.cssText = "width:100%;height:100%;object-fit:contain;display:block;pointer-events:none;";
+                            c.innerHTML = "";
+                            c.appendChild(img);
+                        }
+                        img.src = `tiles/${texture}.png`;
+                        img.style.transform = `rotate(${rotation}deg)`;
+                    }
+                }
             }
         }
 
@@ -462,7 +566,7 @@
                 const key = `enemy${enemyCount}`;
                 setCell(x, y, key);
                 const id = (Object.values(enemies).length ? Math.min(...Object.values(enemies).map(e => e.id)) - 1 : -1);
-                enemies[key] = {id: id, type: "normal"};
+                enemies[key] = {id: id, type: "normal", enemyMechId: null};
                 renderEnemyList();
                 return;
             }
@@ -507,6 +611,7 @@
             grid[y][x] = v;
             const c = gridContainer.querySelector(`.cell[data-x="${x}"][data-y="${y}"]`);
             if (c) updateCell(c, v);
+            autoRotateWalls();
         }
 
         function removeEnemy(k) {
@@ -544,12 +649,24 @@
                 lbl.style.width = "70px";
                 lbl.textContent = k;
 
-                const id = document.createElement("input");
-                id.type = "number";
-                id.value = enemies[k].id;
-                id.style.width = "80px";
-                id.className = "form-control form-control-sm";
-                id.addEventListener("change", () => enemies[k].id = parseInt(id.value));
+                const mechIdLabel = document.createElement("label");
+                mechIdLabel.textContent = "Mech ID";
+                mechIdLabel.style.cssText = "font-size:11px;color:var(--muted);margin-bottom:0;";
+
+                const mechIdWrap = document.createElement("div");
+                mechIdWrap.style.cssText = "display:flex;flex-direction:column;width:80px;";
+
+                const mechId = document.createElement("input");
+                mechId.type = "number";
+                mechId.value = enemies[k].enemyMechId ?? "";
+                mechId.placeholder = "Mech ID";
+                mechId.style.width = "80px";
+                mechId.className = "form-control form-control-sm";
+                mechId.addEventListener("change", () => {
+                    const v = parseInt(mechId.value);
+                    enemies[k].enemyMechId = isNaN(v) ? null : v;
+                });
+                mechIdWrap.append(mechIdLabel, mechId);
 
                 const type = document.createElement("select");
                 type.className = "form-select form-select-sm";
@@ -586,7 +703,7 @@
                     renderEnemyList();
                 });
 
-                r.append(lbl, id, type, element, rm);
+                r.append(lbl, mechIdWrap, type, element, rm);
                 enemyListEl.appendChild(r);
 
                 if (!enemies[k].element) enemies[k].element = "Physical";
@@ -597,8 +714,12 @@
             const outGrid = grid.map(row => row.map(cell => String(cell || "empty")));
 
             const enemiesOut = {};
-            for (const [k, v] of Object.entries(enemies))
-                enemiesOut[k] = {id: v.id, type: v.type, element: v.element};
+            let enemyIdx = 1;
+            for (const [k, v] of Object.entries(enemies)) {
+                const entry = {id: -enemyIdx++, type: v.type, element: v.element};
+                if (v.enemyMechId != null) entry.enemyMechId = v.enemyMechId;
+                enemiesOut[k] = entry;
+            }
 
             const rewards = {
                 firstTimeClear: {
@@ -640,9 +761,10 @@
             };
 
             const mission = {
-                version: "0.0.9",
+                version: "0.1.0",
                 key: missionKeyEl.value || "mission_1",
                 name: missionNameEl.value || "",
+                type: document.getElementById("missionType").value || "normal",
                 energyCost: Number(energyCostEl.value) || 0,
                 element: elementEl.value || "",
                 biome: document.getElementById("biome").value || "",
@@ -717,6 +839,7 @@
             missionNameEl.value = data.name || "";
             energyCostEl.value = data.energyCost || 0;
             elementEl.value = data.element || "Physical";
+            document.getElementById("missionType").value = data.type || "normal";
 
             if (data.location) {
                 document.getElementById("locX").value = data.location.X ?? 0;
@@ -743,7 +866,7 @@
                 document.getElementById("ncVoidMax").value = nc.VoidStone.max;
 
                 document.getElementById("experience").value = r.experience;
-                
+
                 document.getElementById("biome").value = data.biome || "Forest";
             }
 
@@ -758,7 +881,12 @@
             enemyCount = 0;
             if (data.enemies) {
                 for (const [k, v] of Object.entries(data.enemies)) {
-                    enemies[k] = {id: v.id, type: v.type};
+                    enemies[k] = {
+                        id: v.id,
+                        type: v.type,
+                        element: v.element,
+                        enemyMechId: v.enemyMechId ?? null
+                    };
                     enemyCount = Math.max(enemyCount, parseInt(k.replace(/\D/g, "")) || 0);
                 }
             }
@@ -770,6 +898,7 @@
                     if (c) updateCell(c, grid[y][x]);
                 }
             }
+            autoRotateWalls();
 
             jsonOutput.textContent = JSON.stringify(data, null, 2);
         }
