@@ -141,37 +141,31 @@
         <div class="panel">
             <div class="mb-3">
                 <label class="form-label">Mission Key</label>
-                <input id="missionKey" type="text" class="form-control form-control-sm" placeholder="mission_2A"
-                       value="mission_2A"/>
+                <input id="missionKey" type="text" class="form-control form-control-sm" placeholder="49A"
+                       value="49A"/>
             </div>
             <div class="mb-3">
                 <label class="form-label">Mission Name</label>
-                <input id="missionName" type="text" class="form-control form-control-sm" placeholder="Secret Base"
-                       value="Secret Base"/>
+                <input id="missionName" type="text" class="form-control form-control-sm" placeholder="Smoldering Gate"
+                       value="Smoldering Gate"/>
             </div>
-            <div class="row g-2 mb-3">
-                <div class="col-6">
-                    <label class="form-label">Energy Cost</label>
-                    <input id="energyCost" type="number" class="form-control form-control-sm" min="0" value="2"/>
-                </div>
-                <div class="col-6">
-                    <label class="form-label">Mission Element</label>
-                    <select id="element" class="form-select form-select-sm">
-                        <option value="Physical">Physical</option>
-                        <option value="Electric">Electric</option>
-                        <option value="Explosive">Explosive</option>
-                    </select>
-                </div>
+            <div class="mb-3">
+                <label class="form-label">Mission Element</label>
+                <select id="element" class="form-select form-select-sm">
+                    <option value="Physical">Physical</option>
+                    <option value="Electric">Electric</option>
+                    <option value="Explosive">Explosive</option>
+                </select>
             </div>
             <div class="row g-2 mb-3">
                 <div class="col-6">
                     <label class="form-label">Mission Biome</label>
                     <select id="biome" class="form-select form-select-sm">
-                        <option value="Forest">Forest</option>
-                        <option value="Tundra">Tundra</option>
-                        <option value="Desert">Desert</option>
-                        <option value="Volcanic">Volcanic</option>
-                        <option value="Swamp">Swamp</option>
+                        <option value="forest">Forest</option>
+                        <option value="tundra">Tundra</option>
+                        <option value="desert">Desert</option>
+                        <option value="volcanic">Volcanic</option>
+                        <option value="swamp">Swamp</option>
                     </select>
                 </div>
                 <div class="col-6">
@@ -190,7 +184,7 @@
                 <div class="row g-2 mb-2">
                     <div class="col">
                         <label class="form-label">Crate ID</label>
-                        <input type="number" id="ftcCrateId" class="form-control form-control-sm" value="2"\f
+                        <input type="number" id="ftcCrateId" class="form-control form-control-sm" value="2"
                                placeholder="Crate ID"/>
                     </div>
                     <div class="col">
@@ -338,14 +332,17 @@
 <script>
     (() => {
         const TILE_IDS = [
-            "empty", "enemy", "reactor", "turbine", "wall", "player",
+            "empty", "enemyUp", "enemyDown", "enemyLeft", "enemyRight", "reactor", "turbine", "wall", "player",
             "repairStation", "upgradeStation", "gateClosed", "gateOpen",
             "gateTerminal", "landmine", "beacon", "beaconTerminal"
         ];
         const TILE_LABELS = Object.fromEntries(TILE_IDS.map(t => [t, t]));
         const TILE_DESCRIPTIONS = {
             empty: "An empty space.",
-            enemy: "Places an enemy at this location.",
+            enemyUp: "Places an enemy at this location, facing up.",
+            enemyDown: "Places an enemy at this location, facing down.",
+            enemyLeft: "Places an enemy at this location, facing left.",
+            enemyRight: "Places an enemy at this location, facing right.",
             reactor: "Secondary objective structure",
             turbine: "Secondary objective.",
             wall: "A solid barrier that blocks movement",
@@ -369,7 +366,6 @@
             enemyListEl = document.getElementById("enemyList"),
             missionKeyEl = document.getElementById("missionKey"),
             missionNameEl = document.getElementById("missionName"),
-            energyCostEl = document.getElementById("energyCost"),
             elementEl = document.getElementById("element"),
             jsonOutput = document.getElementById("jsonOutput"),
             gridWEl = document.getElementById("gridW"),
@@ -390,9 +386,8 @@
                 const spriteName = getTileSpriteName(id);
                 if (spriteName) {
                     const img = document.createElement("img");
-                    img.src = `tiles/${spriteName}.png`;
                     img.style.cssText = "width:20px;height:20px;object-fit:contain;vertical-align:middle;margin-right:4px;";
-                    img.onerror = () => img.style.display = "none";
+                    loadSprite(img, spriteName);
                     b.appendChild(img);
                 }
                 b.append(id);
@@ -418,6 +413,8 @@
             gridH = h;
             grid = Array.from({length: h}, () => Array(w).fill("empty"));
             enemyCount = 0;
+            repairStationCount = 0;
+            upgradeStationCount = 0;
             for (const k in enemies) delete enemies[k];
             renderGrid();
             renderEnemyList();
@@ -462,9 +459,36 @@
             autoRotateWalls();
         }
 
+        // Fallback when tiles/enemyUp.png etc. don't exist: rotate tiles/enemy.png (assumed to face up)
+        const ENEMY_ROTATION = {Up: 0, Right: 90, Down: 180, Left: 270};
+
+        function enemyDir(v) {
+            const m = /^enemy(Up|Down|Left|Right)/.exec(v || "");
+            return m ? m[1] : null;
+        }
+
+        function nextEnemyIndex() {
+            let max = 0;
+            for (const k of Object.keys(enemies)) max = Math.max(max, parseInt(k.replace(/\D/g, "")) || 0);
+            return max + 1;
+        }
+
+        function loadSprite(img, name) {
+            img.onerror = () => img.style.display = "none";
+            const dir = name.startsWith("enemy") ? name.slice(5) : "";
+            if (ENEMY_ROTATION[dir] !== undefined) {
+                img.onerror = () => {
+                    img.onerror = () => img.style.display = "none";
+                    img.style.transform = `rotate(${ENEMY_ROTATION[dir]}deg)`;
+                    img.src = "tiles/enemy.png";
+                };
+            }
+            img.src = `tiles/${name}.png`;
+        }
+
         function getTileSpriteName(v) {
             if (!v || v === "empty") return null;
-            if (v.startsWith("enemy")) return "enemy";
+            if (v.startsWith("enemy")) return enemyDir(v) ? "enemy" + enemyDir(v) : "enemy";
             if (v.startsWith("repairStation")) return "repairStation";
             if (v.startsWith("upgradeStation")) return "upgradeStation";
             return v;
@@ -476,8 +500,8 @@
             const sprite = getTileSpriteName(v);
             if (sprite) {
                 const img = document.createElement("img");
-                img.src = `tiles/${sprite}.png`;
                 img.style.cssText = "width:100%;height:100%;object-fit:contain;display:block;pointer-events:none;";
+                loadSprite(img, sprite);
                 c.appendChild(img);
             }
         }
@@ -561,9 +585,11 @@
         }
 
         function onClick(x, y) {
-            if (selectedTile === "enemy") {
-                enemyCount++;
-                const key = `enemy${enemyCount}`;
+            if (selectedTile.startsWith("enemy")) {
+                const prev = grid[y][x];
+                if (prev.startsWith("enemy")) removeEnemy(prev);
+                enemyCount = nextEnemyIndex();
+                const key = `${selectedTile}${enemyCount}`;
                 setCell(x, y, key);
                 const id = (Object.values(enemies).length ? Math.min(...Object.values(enemies).map(e => e.id)) - 1 : -1);
                 enemies[key] = {id: id, type: "normal", enemyMechId: null};
@@ -629,8 +655,6 @@
                 }
             }
 
-            enemyCount = Object.keys(enemies).length;
-
             renderEnemyList();
         }
 
@@ -646,7 +670,7 @@
                 r.className = "d-flex gap-2 mb-1 align-items-center";
 
                 const lbl = document.createElement("div");
-                lbl.style.width = "70px";
+                lbl.style.width = "100px";
                 lbl.textContent = k;
 
                 const mechIdLabel = document.createElement("label");
@@ -672,7 +696,7 @@
                 type.className = "form-select form-select-sm";
                 type.style.width = "100px";
 
-                ["normal", "boss"].forEach(opt => {
+                ["normal", "boss", "buggy"].forEach(opt => {
                     const o = document.createElement("option");
                     o.value = opt;
                     o.textContent = opt;
@@ -762,12 +786,11 @@
 
             const mission = {
                 version: "0.1.0",
-                key: missionKeyEl.value || "mission_1",
+                key: missionKeyEl.value || "1A",
                 name: missionNameEl.value || "",
                 type: document.getElementById("missionType").value || "normal",
-                energyCost: Number(energyCostEl.value) || 0,
                 element: elementEl.value || "",
-                biome: document.getElementById("biome").value || "",
+                biome: (document.getElementById("biome").value || "").toLowerCase(),
                 gridWidth: gridW,
                 gridHeight: gridH,
                 grid: outGrid,
@@ -837,7 +860,6 @@
             if (!data) return;
             missionKeyEl.value = data.key || "";
             missionNameEl.value = data.name || "";
-            energyCostEl.value = data.energyCost || 0;
             elementEl.value = data.element || "Physical";
             document.getElementById("missionType").value = data.type || "normal";
 
@@ -866,21 +888,49 @@
                 document.getElementById("ncVoidMax").value = nc.VoidStone.max;
 
                 document.getElementById("experience").value = r.experience;
-
-                document.getElementById("biome").value = data.biome || "Forest";
             }
+
+            document.getElementById("biome").value = (data.biome || "forest").toLowerCase();
 
             gridW = data.gridWidth || 5;
             gridH = data.gridHeight || 5;
             gridWEl.value = gridW;
             gridHEl.value = gridH;
-            grid = data.grid ? data.grid.map(row => [...row]) : [];
+            // Enemies without a facing (e.g. "enemy3") are converted to enemyDown (e.g. "enemyDown3")
+            const rename = {};
+            const usedKeys = new Set([...Object.keys(data.enemies || {}), ...(data.grid || []).flat()]);
+            let maxEnemyNum = 0;
+            for (const k of usedKeys) {
+                if (/^enemy/.test(k)) maxEnemyNum = Math.max(maxEnemyNum, parseInt(k.replace(/\D/g, "")) || 0);
+            }
+            for (const k of usedKeys) {
+                const m = /^enemy(\d+)$/.exec(k);
+                if (!m) continue;
+                let nk = `enemyDown${m[1]}`;
+                if (usedKeys.has(nk)) nk = `enemyDown${++maxEnemyNum}`;
+                rename[k] = nk;
+            }
+            const fixKey = k => rename[k] ?? k;
+
+            grid = data.grid ? data.grid.map(row => row.map(fixKey)) : [];
+            repairStationCount = 0;
+            upgradeStationCount = 0;
+            for (const row of grid) {
+                for (const cell of row) {
+                    const m = /^(repairStation|upgradeStation)(\d+)$/.exec(cell);
+                    if (!m) continue;
+                    const n = parseInt(m[2]);
+                    if (m[1] === "repairStation") repairStationCount = Math.max(repairStationCount, n);
+                    else upgradeStationCount = Math.max(upgradeStationCount, n);
+                }
+            }
             renderGrid();
 
             for (const k in enemies) delete enemies[k];
             enemyCount = 0;
             if (data.enemies) {
-                for (const [k, v] of Object.entries(data.enemies)) {
+                for (const [origKey, v] of Object.entries(data.enemies)) {
+                    const k = fixKey(origKey);
                     enemies[k] = {
                         id: v.id,
                         type: v.type,
@@ -900,7 +950,7 @@
             }
             autoRotateWalls();
 
-            jsonOutput.textContent = JSON.stringify(data, null, 2);
+            exportJSON();
         }
 
         loadFileInput.addEventListener("change", e => {
@@ -918,19 +968,6 @@
             reader.readAsText(file);
             e.target.value = "";
         });
-
-        makeGridBtn.onclick = () => makeGrid(+gridWEl.value || 5, +gridHEl.value || 5);
-        clearGridBtn.onclick = () => {
-            for (let y = 0; y < gridH; y++)
-                for (let x = 0; x < gridW; x++)
-                    grid[y][x] = "empty";
-            for (const k in enemies) delete enemies[k];
-            enemyCount = 0;
-            renderGrid();
-            renderEnemyList();
-        };
-        exportBtn.onclick = exportJSON;
-        downloadBtn.onclick = download;
 
         createPalette();
         makeGrid(5, 5);
