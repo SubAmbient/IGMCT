@@ -311,8 +311,11 @@
             <div class="d-flex gap-2">
                 <button id="exportJSON" class="btn btn-primary btn-sm">Generate JSON</button>
                 <button id="downloadJSON" class="btn btn-secondary btn-sm">Download JSON</button>
+                <button id="chooseFolder" class="btn btn-outline-secondary btn-sm" title="Choose the folder JSON files are saved to">Choose folder</button>
+                <button id="clearFolder" class="btn btn-outline-secondary btn-sm" style="display:none" title="Go back to the Downloads folder">&times;</button>
                 <input id="loadFile" type="file" accept="application/json" class="form-control form-control-sm"/>
             </div>
+            <div id="folderLabel" class="small mt-1" style="color:var(--muted)">Save location: Downloads folder (default)</div>
         </div>
     </div>
 
@@ -658,6 +661,27 @@
             renderEnemyList();
         }
 
+        function changeEnemyDirection(k, dir) {
+            const num = k.replace(/\D/g, "");
+            const nk = `enemy${dir}${num}`;
+            if (nk === k || !enemies[k]) return;
+            // Rebuild enemies object so the order is preserved
+            const entries = Object.entries(enemies).map(([key, v]) => [key === k ? nk : key, v]);
+            for (const key in enemies) delete enemies[key];
+            entries.forEach(([key, v]) => enemies[key] = v);
+            for (let y = 0; y < gridH; y++) {
+                for (let x = 0; x < gridW; x++) {
+                    if (grid[y][x] === k) {
+                        grid[y][x] = nk;
+                        const c = gridContainer.querySelector(`.cell[data-x="${x}"][data-y="${y}"]`);
+                        if (c) updateCell(c, nk);
+                    }
+                }
+            }
+            renderEnemyList();
+            exportJSON();
+        }
+
         function renderEnemyList() {
             enemyListEl.innerHTML = "";
             const keys = Object.keys(enemies);
@@ -727,7 +751,21 @@
                     renderEnemyList();
                 });
 
-                r.append(lbl, mechIdWrap, type, element, rm);
+                const dirSel = document.createElement("select");
+                dirSel.className = "form-select form-select-sm";
+                dirSel.style.width = "90px";
+                dirSel.title = "Facing direction";
+                const curDir = enemyDir(k) || "Down";
+                ["Up", "Down", "Left", "Right"].forEach(opt => {
+                    const o = document.createElement("option");
+                    o.value = opt;
+                    o.textContent = opt;
+                    if (curDir === opt) o.selected = true;
+                    dirSel.appendChild(o);
+                });
+                dirSel.addEventListener("change", () => changeEnemyDirection(k, dirSel.value));
+
+                r.append(lbl, mechIdWrap, type, element, dirSel, rm);
                 enemyListEl.appendChild(r);
 
                 if (!enemies[k].element) enemies[k].element = "Physical";
@@ -830,15 +868,113 @@
             return mission;
         }
 
-        function download() {
-            const m = exportJSON();
-            const blob = new Blob([jsonOutput.textContent], {type: "application/json"});
+        // ---- Save folder (File System Access API; Chromium browsers) ----
+        let saveDirHandle = null;
+        const folderLabelEl = document.getElementById("folderLabel"),
+            chooseFolderBtn = document.getElementById("chooseFolder"),
+            clearFolderBtn = document.getElementById("clearFolder");
+
+        function idbOpen() {
+            return new Promise((res, rej) => {
+                const req = indexedDB.open("missionEditor", 1);
+                req.onupgradeneeded = () => req.result.createObjectStore("kv");
+                req.onsuccess = () => res(req.result);
+                req.onerror = () => rej(req.error);
+            });
+        }
+
+        async function idbSet(key, val) {
+            try {
+                const db = await idbOpen();
+                await new Promise((res, rej) => {
+                    const tx = db.transaction("kv", "readwrite");
+                    if (val === undefined) tx.objectStore("kv").delete(key); else tx.objectStore("kv").put(val, key);
+                    tx.oncomplete = res;
+                    tx.onerror = () => rej(tx.error);
+                });
+            } catch (e) { /* ignore */ }
+        }
+
+        async function idbGet(key) {
+            try {
+                const db = await idbOpen();
+                return await new Promise((res, rej) => {
+                    const req = db.transaction("kv").objectStore("kv").get(key);
+                    req.onsuccess = () => res(req.result);
+                    req.onerror = () => rej(req.error);
+                });
+            } catch (e) { return undefined; }
+        }
+
+        function updateFolderUI() {
+            folderLabelEl.textContent = saveDirHandle
+                ? `Save location: ${saveDirHandle.name}`
+                : "Save location: Downloads folder (default)";
+            clearFolderBtn.style.display = saveDirHandle ? "" : "none";
+        }
+
+        chooseFolderBtn.onclick = async () => {
+            if (!window.showDirectoryPicker) {
+                alert("Your browser doesn't support choosing a folder (use Chrome or Edge). Files will go to the Downloads folder.");
+                return;
+            }
+            try {
+                saveDirHandle = await window.showDirectoryPicker({mode: "readwrite", id: "missionEditor"});
+                await idbSet("saveDir", saveDirHandle);
+                updateFolderUI();
+            } catch (e) {
+                // cancelled: keep the current setting
+            }
+        };
+
+        clearFolderBtn.onclick = async () => {
+            saveDirHandle = null;
+            await idbSet("saveDir", undefined);
+            updateFolderUI();
+        };
+
+        (async () => {
+            const h = await idbGet("saveDir");
+            if (h && h.kind === "directory") {
+                saveDirHandle = h;
+                updateFolderUI();
+            }
+        })();
+
+        function browserDownload(text, filename) {
+            const blob = new Blob([text], {type: "application/json"});
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
-            a.download = (m.key || "mission") + ".json";
+            a.download = filename;
             a.click();
             URL.revokeObjectURL(url);
+        }
+
+        async function download() {
+            const m = exportJSON();
+            const filename = (m.key || "mission") + ".json";
+            const text = jsonOutput.textContent;
+
+            if (saveDirHandle) {
+                try {
+                    let perm = await saveDirHandle.queryPermission({mode: "readwrite"});
+                    if (perm !== "granted") perm = await saveDirHandle.requestPermission({mode: "readwrite"});
+                    if (perm === "granted") {
+                        const fh = await saveDirHandle.getFileHandle(filename, {create: true});
+                        const w = await fh.createWritable();
+                        await w.write(text);
+                        await w.close();
+                        folderLabelEl.textContent = `Saved ${filename} to: ${saveDirHandle.name}`;
+                        return;
+                    }
+                } catch (e) {
+                    console.warn("Saving to chosen folder failed, falling back to Downloads", e);
+                }
+            }
+            // Default: Downloads folder
+            browserDownload(text, filename);
+            if (!saveDirHandle) folderLabelEl.textContent = `Saved ${filename} to: Downloads folder`;
         }
 
         makeGridBtn.onclick = () => makeGrid(+gridWEl.value || 5, +gridHEl.value || 5);
