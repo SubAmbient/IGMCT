@@ -162,10 +162,8 @@
                     <label class="form-label">Mission Biome</label>
                     <select id="biome" class="form-select form-select-sm">
                         <option value="forest">Forest</option>
-                        <option value="tundra">Tundra</option>
                         <option value="desert">Desert</option>
-                        <option value="volcanic">Volcanic</option>
-                        <option value="swamp">Swamp</option>
+                        <option value="night_desert:2">Night Desert</option>
                     </select>
                 </div>
                 <div class="col-6">
@@ -1026,7 +1024,9 @@
                 document.getElementById("experience").value = r.experience;
             }
 
-            document.getElementById("biome").value = (data.biome || "forest").toLowerCase();
+            const biomeEl = document.getElementById("biome");
+            biomeEl.value = (data.biome || "forest").toLowerCase();
+            if (biomeEl.selectedIndex < 0) biomeEl.value = "forest"; // unknown biome in loaded file
 
             gridW = data.gridWidth || 5;
             gridH = data.gridHeight || 5;
